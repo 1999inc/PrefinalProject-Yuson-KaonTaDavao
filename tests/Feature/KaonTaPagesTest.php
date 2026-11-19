@@ -93,3 +93,52 @@ test('eatery create update and delete use their relationships', function () {
 
     expect(Eatery::whereKey($eatery->id)->exists())->toBeFalse();
 });
+
+test('eatery form requests use the required personalized messages', function () {
+    $base = [
+        'name' => 'Validation Test Eatery',
+        'district_id' => District::firstOrFail()->id,
+        'address' => '123 Test Street, Davao City',
+        'price_range' => 'budget',
+        'specialty' => 'Chicken soup',
+        'features' => [Feature::firstOrFail()->id],
+        'permit_no' => 'DVO-2026-98765',
+        'expires_on' => '2027-12-31',
+        'is_open' => '1',
+    ];
+
+    $cases = [
+        ['name', "Kaon Ta Yuson already lists an eatery with this name.", ['name' => 'Carinderia ni Yuson']],
+        ['features', 'Pick at least one feature.', ['features' => null]],
+        ['permit_no', 'Permit number must look like DVO-2026-0523.', ['permit_no' => 'invalid']],
+        ['expires_on', 'The permit must not be expired.', ['expires_on' => now()->subDay()->toDateString()]],
+    ];
+
+    foreach ($cases as [$field, $message, $overrides]) {
+        $this->flushSession()
+            ->from(route('eateries.create'))
+            ->post(route('eateries.store'), array_replace($base, $overrides))
+            ->assertSessionHasErrors([$field])
+            ->assertSessionHas('errors', fn ($errors) => $errors->first($field) === $message);
+    }
+
+    $eatery = Eatery::where('slug', 'carinderia-ni-yuson')->firstOrFail();
+    $reviewCases = [
+        ['user_id', 'Choose who is writing this review.', ['user_id' => null]],
+        ['rating', 'Ratings go from 1 to 5 stars only.', ['rating' => 6]],
+        ['body', 'Kaon Ta Yuson: reviews need at least 10 characters.', ['body' => 'Too short']],
+    ];
+
+    foreach ($reviewCases as [$field, $message, $overrides]) {
+        $this->flushSession()
+            ->from(route('eateries.show', $eatery))
+            ->post(route('eateries.reviews.store', $eatery), array_replace([
+                'user_id' => User::firstOrFail()->id,
+                'rating' => 5,
+                'body' => 'A good meal worth reviewing.',
+            ], $overrides))
+            ->assertSessionHasErrors([$field])
+            ->assertSessionHas('errors', fn ($errors) => $errors->first($field) === $message);
+    }
+});
+
